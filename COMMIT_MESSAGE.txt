@@ -1,0 +1,40 @@
+feat: Add Advisory Node service for centralized quorum management
+
+Implement a centralized advisory node service to replace manual quorum 
+management in RubixGo platform. This service provides intelligent quorum 
+discovery with balance validation and load balancing.
+
+Key Features:
+- REST API for quorum registration and discovery
+- Balance validation (ensures quorums have transaction_amount/count RBT)
+- Load balancing with round-robin assignment tracking
+- Heartbeat mechanism (2-minute intervals) for availability tracking
+- Automatic fallback to local management if advisory node unavailable
+- Support for both SQLite and PostgreSQL databases
+- DID type validation (0-4, including lite mode)
+
+API Endpoints:
+- POST /api/quorum/register - Register a quorum with balance
+- POST /api/quorum/confirm-availability - Confirm quorum is available
+- GET /api/quorum/available - Get quorums with balance validation
+- PUT /api/quorum/balance - Update quorum balance
+- POST /api/quorum/heartbeat - Send heartbeat signal
+- GET /api/quorum/health - Check service health
+- GET /api/quorum/info/:did - Get specific quorum information
+- DELETE /api/quorum/unregister/:did - Unregister a quorum
+
+Integration:
+- Hardcoded port 8082 for RubixGo platform compatibility
+- Automatic registration when nodes run SetupQuorum
+- Replaces manual QuorumManager database entries
+- Supports ~700 quorum nodes out of 10,000 total nodes
+
+Technical Details:
+- Built with Gin web framework for high performance
+- GORM ORM for database operations
+- In-memory store option for testing
+- Configurable via command-line flags
+- CORS support for cross-origin requests
+
+This solves the scalability issue of manual quorum management and provides
+a robust solution for quorum discovery in the RubixGo ecosystem.

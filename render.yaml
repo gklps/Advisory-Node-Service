@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: advisory-node
+    env: go
+    plan: starter  # Can upgrade to standard/pro for more resources
+    buildCommand: go build -o advisory-node main_db.go
+    startCommand: ./advisory-node
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: GIN_MODE
+        value: release
+      - key: DB_TYPE
+        value: postgres
+      - key: DB_SSL_MODE
+        value: require
+      - key: CORS_ORIGINS
+        value: "*"
+    autoDeploy: true
+    
+  - type: pserv  # PostgreSQL database
+    name: advisory-node-db
+    plan: starter  # Free tier PostgreSQL
+    databaseName: advisory_node
+    user: advisory_user
+    envVars:
+      - key: POSTGRES_DB
+        value: advisory_node
+      - key: POSTGRES_USER
+        value: advisory_user

@@ -50,10 +50,56 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
+# Configuration options (you can modify these)
+DEFAULT_DB_USER="advisory_user"
+DEFAULT_TESTNET_PORT="8080"
+DEFAULT_MAINNET_PORT="8081"
+DEFAULT_TESTNET_DB="advisory_testnet"
+DEFAULT_MAINNET_DB="advisory_mainnet"
+
 echo ""
-read -p "Enter database password for advisory_user: " -s DB_PASSWORD
+echo "🔧 Configuration Options:"
+echo "   Database User: $DEFAULT_DB_USER"
+echo "   Testnet Port: $DEFAULT_TESTNET_PORT"
+echo "   Mainnet Port: $DEFAULT_MAINNET_PORT"
+echo "   Testnet DB: $DEFAULT_TESTNET_DB"
+echo "   Mainnet DB: $DEFAULT_MAINNET_DB"
+echo ""
+
+read -p "Enter database password for $DEFAULT_DB_USER: " -s DB_PASSWORD
 echo ""
 read -p "Enter your VM's domain name (optional, press enter to skip): " DOMAIN_NAME
+
+# Allow customization
+echo ""
+read -p "Use custom configuration? (y/n, default: n): " -n 1 -r CUSTOM_CONFIG
+echo ""
+if [[ $CUSTOM_CONFIG =~ ^[Yy]$ ]]; then
+    read -p "Database username (default: $DEFAULT_DB_USER): " CUSTOM_DB_USER
+    read -p "Testnet port (default: $DEFAULT_TESTNET_PORT): " CUSTOM_TESTNET_PORT
+    read -p "Mainnet port (default: $DEFAULT_MAINNET_PORT): " CUSTOM_MAINNET_PORT
+    read -p "Testnet database name (default: $DEFAULT_TESTNET_DB): " CUSTOM_TESTNET_DB
+    read -p "Mainnet database name (default: $DEFAULT_MAINNET_DB): " CUSTOM_MAINNET_DB
+    
+    # Use custom values if provided
+    DB_USER=${CUSTOM_DB_USER:-$DEFAULT_DB_USER}
+    TESTNET_PORT=${CUSTOM_TESTNET_PORT:-$DEFAULT_TESTNET_PORT}
+    MAINNET_PORT=${CUSTOM_MAINNET_PORT:-$DEFAULT_MAINNET_PORT}
+    TESTNET_DB=${CUSTOM_TESTNET_DB:-$DEFAULT_TESTNET_DB}
+    MAINNET_DB=${CUSTOM_MAINNET_DB:-$DEFAULT_MAINNET_DB}
+else
+    # Use defaults
+    DB_USER=$DEFAULT_DB_USER
+    TESTNET_PORT=$DEFAULT_TESTNET_PORT
+    MAINNET_PORT=$DEFAULT_MAINNET_PORT
+    TESTNET_DB=$DEFAULT_TESTNET_DB
+    MAINNET_DB=$DEFAULT_MAINNET_DB
+fi
+
+print_status "Using configuration:"
+print_status "  Database User: $DB_USER"
+print_status "  Testnet: Port $TESTNET_PORT, Database $TESTNET_DB"
+print_status "  Mainnet: Port $MAINNET_PORT, Database $MAINNET_DB"
 
 print_status "Starting VM setup..."
 
@@ -85,11 +131,11 @@ sudo systemctl enable postgresql
 
 # Create databases and user
 sudo -u postgres psql << EOF
-CREATE DATABASE advisory_testnet;
-CREATE DATABASE advisory_mainnet;
-CREATE USER advisory_user WITH PASSWORD '$DB_PASSWORD';
-GRANT ALL PRIVILEGES ON DATABASE advisory_testnet TO advisory_user;
-GRANT ALL PRIVILEGES ON DATABASE advisory_mainnet TO advisory_user;
+CREATE DATABASE $TESTNET_DB;
+CREATE DATABASE $MAINNET_DB;
+CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON DATABASE $TESTNET_DB TO $DB_USER;
+GRANT ALL PRIVILEGES ON DATABASE $MAINNET_DB TO $DB_USER;
 \q
 EOF
 
@@ -107,51 +153,140 @@ sudo cp $PG_HBA_PATH $PG_HBA_PATH.backup
 sudo tee -a $PG_HBA_PATH > /dev/null << EOF
 
 # Advisory Node Service connections
-local   advisory_testnet    advisory_user                     md5
-local   advisory_mainnet    advisory_user                     md5
-host    advisory_testnet    advisory_user    127.0.0.1/32     md5
-host    advisory_mainnet    advisory_user    127.0.0.1/32     md5
+local   $TESTNET_DB    $DB_USER                     md5
+local   $MAINNET_DB    $DB_USER                     md5
+host    $TESTNET_DB    $DB_USER    127.0.0.1/32     md5
+host    $MAINNET_DB    $DB_USER    127.0.0.1/32     md5
 EOF
 
 sudo systemctl restart postgresql
 
-# Create application directory
-print_status "Setting up application directory..."
-sudo mkdir -p /opt/advisory-node/data
-sudo chown -R $USER:$USER /opt/advisory-node
+# Determine script and project directories using relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Clone and build application (assuming we're in the repo directory)
-print_status "Building Advisory Node application..."
-cd /opt/advisory-node
+# For deployment, we'll use a local directory instead of /opt
+DEPLOY_BASE_DIR="$HOME/advisory-node-deploy"
+APP_DIR="$DEPLOY_BASE_DIR"
 
-# Copy current directory contents (if running from repo)
-if [ -f "main.go" ]; then
-    print_status "Copying application files..."
-    cp -r * /opt/advisory-node/
-else
-    print_error "main.go not found. Please run this script from the advisory-node repository directory."
+print_status "Script directory: $SCRIPT_DIR"
+print_status "Project directory: $PROJECT_DIR"
+print_status "Deployment directory: $APP_DIR"
+
+# Check for main.go in multiple possible locations
+MAIN_GO_LOCATIONS=(
+    "$PROJECT_DIR/main.go"
+    "$PROJECT_DIR/main_db.go"  
+    "$SCRIPT_DIR/../main.go"
+    "$SCRIPT_DIR/../main_db.go"
+    "$(pwd)/main.go"
+    "$(pwd)/main_db.go"
+)
+
+MAIN_GO_FOUND=""
+for location in "${MAIN_GO_LOCATIONS[@]}"; do
+    if [ -f "$location" ]; then
+        MAIN_GO_FOUND="$location"
+        PROJECT_DIR="$(dirname "$location")"
+        print_status "Found main.go at: $MAIN_GO_FOUND"
+        print_status "Using project directory: $PROJECT_DIR"
+        break
+    fi
+done
+
+if [ -z "$MAIN_GO_FOUND" ]; then
+    print_error "main.go not found in any expected location:"
+    for location in "${MAIN_GO_LOCATIONS[@]}"; do
+        print_error "  - $location"
+    done
+    print_error ""
+    print_error "Please ensure you're running this script from the correct location."
+    print_error "Current directory: $(pwd)"
+    print_error "Script directory: $SCRIPT_DIR"
     exit 1
 fi
 
+# Create deployment directory structure
+print_status "Setting up deployment directory..."
+mkdir -p $APP_DIR/data
+mkdir -p $APP_DIR/scripts
+mkdir -p $APP_DIR/backups
+mkdir -p $APP_DIR/logs
+
+# Copy application files
+print_status "Copying application files..."
+print_status "Copying from: $PROJECT_DIR"
+print_status "Copying to: $APP_DIR"
+
+# List what we're copying for debugging
+print_status "Files to copy:"
+ls -la "$PROJECT_DIR" | head -10
+
+cp -r $PROJECT_DIR/* $APP_DIR/
+
+# Verify critical files were copied
+print_status "Verifying copied files..."
+if [ ! -f "$APP_DIR/go.mod" ]; then
+    print_error "go.mod not found in deployment directory"
+    exit 1
+fi
+
+if [ ! -f "$APP_DIR/main.go" ] && [ ! -f "$APP_DIR/main_db.go" ]; then
+    print_error "No main Go file found in deployment directory"
+    ls -la "$APP_DIR/"
+    exit 1
+fi
+
+# Build application
+print_status "Building Advisory Node application..."
+cd $APP_DIR
+
+# Check if we have go.mod
+if [ ! -f "go.mod" ]; then
+    print_error "go.mod not found in $APP_DIR"
+    print_error "Directory contents:"
+    ls -la
+    exit 1
+fi
+
+print_status "Downloading Go modules..."
 go mod download
-go build -o advisory-node
+
+print_status "Building binary..."
+# Try to build with the main file we found
+if [ -f "main.go" ]; then
+    go build -o advisory-node main.go
+elif [ -f "main_db.go" ]; then
+    go build -o advisory-node main_db.go
+else
+    print_error "No suitable main Go file found for building"
+    exit 1
+fi
+
+# Verify the binary was created
+if [ ! -f "advisory-node" ]; then
+    print_error "Failed to build advisory-node binary"
+    exit 1
+fi
+
+print_status "✅ Binary built successfully: $(ls -lh advisory-node)"
 
 # Create environment files
 print_status "Creating environment configuration files..."
 
 # Testnet environment
-cat > /opt/advisory-node/testnet.env << EOF
+cat > $APP_DIR/testnet.env << EOF
 # Database Configuration
 DB_TYPE=postgres
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=advisory_testnet
-DB_USER=advisory_user
+DB_NAME=$TESTNET_DB
+DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 DB_SSL_MODE=disable
 
 # Server Configuration
-PORT=8080
+PORT=$TESTNET_PORT
 GIN_MODE=release
 CORS_ORIGINS=*
 
@@ -160,18 +295,18 @@ ENVIRONMENT=testnet
 EOF
 
 # Mainnet environment
-cat > /opt/advisory-node/mainnet.env << EOF
+cat > $APP_DIR/mainnet.env << EOF
 # Database Configuration
 DB_TYPE=postgres
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=advisory_mainnet
-DB_USER=advisory_user
+DB_NAME=$MAINNET_DB
+DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 DB_SSL_MODE=disable
 
 # Server Configuration
-PORT=8081
+PORT=$MAINNET_PORT
 GIN_MODE=release
 CORS_ORIGINS=*
 
@@ -183,65 +318,65 @@ EOF
 print_status "Creating startup scripts..."
 
 # Testnet startup script
-cat > /opt/advisory-node/start-testnet.sh << 'EOF'
+cat > $APP_DIR/start-testnet.sh << EOF
 #!/bin/bash
-source /opt/advisory-node/testnet.env
+source $APP_DIR/testnet.env
 export DB_TYPE DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_SSL_MODE
 export PORT GIN_MODE CORS_ORIGINS ENVIRONMENT
 
 echo "Starting Advisory Node - TESTNET"
-echo "Port: $PORT"
-echo "Database: $DB_NAME"
-echo "Environment: $ENVIRONMENT"
+echo "Port: \$PORT"
+echo "Database: \$DB_NAME"
+echo "Environment: \$ENVIRONMENT"
 
-cd /opt/advisory-node
+cd $APP_DIR
 ./advisory-node
 EOF
 
 # Mainnet startup script
-cat > /opt/advisory-node/start-mainnet.sh << 'EOF'
+cat > $APP_DIR/start-mainnet.sh << EOF
 #!/bin/bash
-source /opt/advisory-node/mainnet.env
+source $APP_DIR/mainnet.env
 export DB_TYPE DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_SSL_MODE
 export PORT GIN_MODE CORS_ORIGINS ENVIRONMENT
 
 echo "Starting Advisory Node - MAINNET"
-echo "Port: $PORT"
-echo "Database: $DB_NAME"
-echo "Environment: $ENVIRONMENT"
+echo "Port: \$PORT"
+echo "Database: \$DB_NAME"
+echo "Environment: \$ENVIRONMENT"
 
-cd /opt/advisory-node
+cd $APP_DIR
 ./advisory-node
 EOF
 
-chmod +x /opt/advisory-node/start-testnet.sh
-chmod +x /opt/advisory-node/start-mainnet.sh
+chmod +x $APP_DIR/start-testnet.sh
+chmod +x $APP_DIR/start-mainnet.sh
 
 # Create supervisor configurations
 print_status "Setting up Supervisor process management..."
 
 sudo tee /etc/supervisor/conf.d/advisory-testnet.conf > /dev/null << EOF
 [program:advisory-testnet]
-command=/opt/advisory-node/start-testnet.sh
-directory=/opt/advisory-node
+command=$APP_DIR/start-testnet.sh
+directory=$APP_DIR
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/advisory-testnet.err.log
-stdout_logfile=/var/log/advisory-testnet.out.log
+stderr_logfile=$APP_DIR/logs/advisory-testnet.err.log
+stdout_logfile=$APP_DIR/logs/advisory-testnet.out.log
 user=$USER
-environment=HOME="/opt/advisory-node",USER="$USER"
+environment=HOME="$APP_DIR",USER="$USER"
 EOF
 
 sudo tee /etc/supervisor/conf.d/advisory-mainnet.conf > /dev/null << EOF
 [program:advisory-mainnet]
-command=/opt/advisory-node/start-mainnet.sh
-directory=/opt/advisory-node
+command=$APP_DIR/start-mainnet.sh
+directory=$APP_DIR
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/advisory-mainnet.err.log
-stdout_logfile=/var/log/advisory-mainnet.out.log
+stderr_logfile=$APP_DIR/logs/advisory-mainnet.err.log
+stdout_logfile=$APP_DIR/logs/advisory-mainnet.out.log
 user=$USER
-environment=HOME="/opt/advisory-node",USER="$USER"
+environment=HOME="$APP_DIR",USER="$USER"
 EOF
 
 # Setup Nginx (if domain provided)
@@ -323,7 +458,7 @@ fi
 
 # Create management script
 print_status "Creating management script..."
-cat > /opt/advisory-node/manage.sh << 'EOF'
+cat > $APP_DIR/manage.sh << EOF
 #!/bin/bash
 
 case "$1" in
@@ -358,14 +493,16 @@ case "$1" in
         ;;
     update)
         echo "Updating application..."
-        cd /opt/advisory-node
+        cd $PROJECT_DIR
         git pull
+        cp -r * $APP_DIR/
+        cd $APP_DIR
         go build -o advisory-node
         sudo supervisorctl restart advisory-testnet advisory-mainnet
         echo "Update complete!"
         ;;
     *)
-        echo "Usage: $0 {status|start|stop|restart|logs|update}"
+        echo "Usage: \$0 {status|start|stop|restart|logs|update}"
         echo ""
         echo "Commands:"
         echo "  status  - Show service status and health"
@@ -378,8 +515,19 @@ case "$1" in
 esac
 EOF
 
-chmod +x /opt/advisory-node/manage.sh
+chmod +x $APP_DIR/manage.sh
 
+# Setup auto-start on reboot
+print_status "Setting up auto-start on reboot..."
+chmod +x $APP_DIR/scripts/auto-start-service.sh
+
+# Add to crontab for auto-start on reboot
+(crontab -l 2>/dev/null | grep -v "auto-start-service.sh"; echo "@reboot $APP_DIR/scripts/auto-start-service.sh") | crontab -
+
+# Also ensure supervisor starts on boot
+sudo systemctl enable supervisor
+
+print_status "✅ Auto-start on reboot configured"
 print_status "Setup completed successfully!"
 echo ""
 echo "========================================="
@@ -398,10 +546,10 @@ echo "   - http://mainnet-advisory.$DOMAIN_NAME"
 fi
 echo ""
 echo "🔧 Management commands:"
-echo "   /opt/advisory-node/manage.sh status"
-echo "   /opt/advisory-node/manage.sh restart"
-echo "   /opt/advisory-node/manage.sh logs testnet"
-echo "   /opt/advisory-node/manage.sh logs mainnet"
+echo "   $APP_DIR/manage.sh status"
+echo "   $APP_DIR/manage.sh restart"
+echo "   $APP_DIR/manage.sh logs testnet"
+echo "   $APP_DIR/manage.sh logs mainnet"
 echo ""
 echo "🌐 Service URLs:"
 echo "   Testnet:  http://$(hostname -I | awk '{print $1}'):8080"

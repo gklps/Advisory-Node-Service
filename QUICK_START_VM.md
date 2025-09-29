@@ -3,8 +3,9 @@
 ## TL;DR - One Command Setup
 
 ```bash
-# Run this from your advisory-node repository directory
-sudo ./scripts/setup-vm.sh
+# Run this from your Advisory-Node-Service/scripts directory
+cd /home/rubix/Advisory-Node-Service/scripts
+./setup-vm.sh
 ```
 
 ## What You Get
@@ -26,22 +27,21 @@ sudo ./scripts/setup-vm.sh
 ### 1. Prepare Your VM
 
 ```bash
-# Update system
+# Update system (if needed)
 sudo apt update && sudo apt upgrade -y
 
-# Clone the repository
-git clone <your-repo-url>
-cd advisory-node
+# Navigate to your project directory
+cd /home/rubix/Advisory-Node-Service/scripts
 ```
 
 ### 2. Run Setup Script
 
 ```bash
 # Make script executable
-chmod +x scripts/setup-vm.sh
+chmod +x setup-vm.sh
 
 # Run setup (will prompt for database password)
-./scripts/setup-vm.sh
+./setup-vm.sh
 ```
 
 The script will:
@@ -56,7 +56,7 @@ The script will:
 
 ```bash
 # Check service status
-/opt/advisory-node/manage.sh status
+~/advisory-node-deploy/manage.sh status
 
 # Test endpoints
 curl http://localhost:8080/api/quorum/health  # Testnet
@@ -66,7 +66,7 @@ curl http://localhost:8081/api/quorum/health  # Mainnet
 ## Management Commands
 
 ```bash
-cd /opt/advisory-node
+cd ~/advisory-node-deploy
 
 # Service management
 ./manage.sh status    # Check status
@@ -84,22 +84,31 @@ cd /opt/advisory-node
 
 ## Configuration Files
 
-- **Testnet**: `/opt/advisory-node/testnet.env`
-- **Mainnet**: `/opt/advisory-node/mainnet.env`
+- **Testnet**: `~/advisory-node-deploy/testnet.env`
+- **Mainnet**: `~/advisory-node-deploy/mainnet.env`
 - **Supervisor**: `/etc/supervisor/conf.d/advisory-*.conf`
 
 ## Directory Structure
 
 ```
-/opt/advisory-node/
-├── advisory-node           # Binary
-├── testnet.env            # Testnet config
-├── mainnet.env            # Mainnet config
-├── start-testnet.sh       # Testnet startup script
-├── start-mainnet.sh       # Mainnet startup script
-├── manage.sh              # Management script
-├── backups/               # Database backups
-└── scripts/               # Utility scripts
+~/advisory-node-deploy/          # Deployment directory
+├── advisory-node               # Binary
+├── testnet.env                # Testnet config
+├── mainnet.env                # Mainnet config
+├── start-testnet.sh           # Testnet startup script
+├── start-mainnet.sh           # Mainnet startup script
+├── manage.sh                  # Management script
+├── backups/                   # Database backups
+├── logs/                      # Service logs
+└── scripts/                   # Utility scripts
+
+/home/rubix/Advisory-Node-Service/  # Source code directory
+├── main.go                    # Application source
+├── scripts/                   # Setup scripts
+│   ├── setup-vm.sh           # Main setup script
+│   ├── backup-db.sh          # Backup script
+│   └── restore-db.sh         # Restore script
+└── ...                       # Other source files
 ```
 
 ## Service URLs

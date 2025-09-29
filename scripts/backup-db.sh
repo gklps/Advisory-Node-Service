@@ -6,7 +6,9 @@
 set -e
 
 # Configuration
-BACKUP_DIR="/opt/advisory-node/backups"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKUP_DIR="$APP_DIR/backups"
 DATE=$(date +"%Y%m%d_%H%M%S")
 DB_USER="advisory_user"
 

@@ -6,7 +6,9 @@
 set -e
 
 # Configuration
-BACKUP_DIR="/opt/advisory-node/backups"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKUP_DIR="$APP_DIR/backups"
 DB_USER="advisory_user"
 
 # Colors for output

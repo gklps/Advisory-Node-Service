@@ -46,11 +46,12 @@ chmod +x setup-vm.sh
 
 The script will:
 - Install PostgreSQL, Go, Supervisor, Nginx
-- Create testnet and mainnet databases
+- Create testnet and mainnet databases **with proper permissions**
 - Build and configure the Advisory Node service
-- Set up process management
-- Configure firewall
-- Start both environments
+- Set up process management with auto-restart
+- Configure firewall and auto-start on reboot
+- **Test all services with health checks**
+- Provide comprehensive troubleshooting info
 
 ### 3. Verify Installation
 
@@ -148,33 +149,51 @@ curl "http://your-vm-ip:8080/api/quorum/transactions?limit=10"
 ### Services Not Starting
 
 ```bash
-# Check logs
+# The updated script includes automatic diagnostics!
+# Check comprehensive status
+~/advisory-node-deploy/manage.sh status
+
+# View detailed logs
 sudo supervisorctl tail advisory-testnet
 sudo supervisorctl tail advisory-mainnet
 
 # Check database connection
-psql -h localhost -U advisory_user advisory_testnet -c "SELECT current_database();"
+PGPASSWORD="your_password" psql -h localhost -U advisory_user advisory_testnet -c "SELECT current_database();"
+```
+
+### Database Permission Issues (Now Fixed Automatically)
+
+The updated setup script automatically handles database permissions, but if you encounter issues:
+
+```bash
+# Run the permission fix script
+cd ~/Advisory-Node-Service/scripts
+./fix-database-permissions.sh
+
+# Or manually fix permissions
+sudo -u postgres psql -c "ALTER DATABASE advisory_testnet OWNER TO advisory_user;"
+sudo -u postgres psql -c "ALTER DATABASE advisory_mainnet OWNER TO advisory_user;"
 ```
 
 ### Port Already in Use
 
 ```bash
-# Check what's using the port
+# Check what's using the ports
 lsof -i:8080
 lsof -i:8081
 
-# Kill if needed
+# Kill conflicting processes if needed
 sudo kill -9 $(lsof -ti:8080)
+sudo kill -9 $(lsof -ti:8081)
 ```
 
-### Database Issues
+### Complete Service Restart
 
 ```bash
-# Check PostgreSQL status
-sudo systemctl status postgresql
-
-# Check database access
-sudo -u postgres psql -l
+# Full service restart
+sudo systemctl restart postgresql supervisor
+sleep 10
+sudo supervisorctl restart advisory-testnet advisory-mainnet
 ```
 
 ## Production Considerations

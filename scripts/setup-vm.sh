@@ -129,15 +129,40 @@ print_status "Configuring PostgreSQL..."
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
-# Create databases and user
+# Create databases and user with proper permissions
+print_status "Creating databases and configuring permissions..."
 sudo -u postgres psql << EOF
+-- Create databases
 CREATE DATABASE $TESTNET_DB;
 CREATE DATABASE $MAINNET_DB;
+
+-- Create user
 CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+
+-- Grant database-level privileges
 GRANT ALL PRIVILEGES ON DATABASE $TESTNET_DB TO $DB_USER;
 GRANT ALL PRIVILEGES ON DATABASE $MAINNET_DB TO $DB_USER;
+
+-- Make user owner of databases (ensures all permissions)
+ALTER DATABASE $TESTNET_DB OWNER TO $DB_USER;
+ALTER DATABASE $MAINNET_DB OWNER TO $DB_USER;
+
+-- Connect to testnet database and set schema permissions
+\c $TESTNET_DB
+GRANT ALL PRIVILEGES ON SCHEMA public TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+
+-- Connect to mainnet database and set schema permissions
+\c $MAINNET_DB
+GRANT ALL PRIVILEGES ON SCHEMA public TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+
 \q
 EOF
+
+print_status "✅ Databases created with proper permissions"
 
 # Configure PostgreSQL authentication
 print_status "Configuring PostgreSQL authentication..."
@@ -437,23 +462,69 @@ sudo supervisorctl start advisory-testnet advisory-mainnet
 # Wait a moment for services to start
 sleep 5
 
-# Test services
+# Enhanced service testing with retries
 print_status "Testing service endpoints..."
 
+# Wait for services to fully initialize
+print_status "Waiting for services to initialize (30 seconds)..."
+sleep 30
+
+# Test testnet service with retries
 echo ""
-echo "Testing testnet (port 8080)..."
-if curl -s http://localhost:8080/api/quorum/health > /dev/null; then
-    print_status "Testnet service is running successfully!"
-else
-    print_warning "Testnet service may not be ready yet. Check logs with: sudo supervisorctl tail advisory-testnet"
+print_status "Testing testnet service (port $TESTNET_PORT)..."
+TESTNET_SUCCESS=false
+for i in {1..10}; do
+    if curl -s --connect-timeout 5 http://localhost:$TESTNET_PORT/api/quorum/health >/dev/null 2>&1; then
+        print_status "✅ Testnet service is running successfully!"
+        curl -s http://localhost:$TESTNET_PORT/api/quorum/health | head -3
+        TESTNET_SUCCESS=true
+        break
+    else
+        print_warning "Attempt $i: Testnet not responding, waiting 5 seconds..."
+        sleep 5
+    fi
+done
+
+if [ "$TESTNET_SUCCESS" = false ]; then
+    print_error "❌ Testnet service failed to start properly"
+    print_status "Checking testnet logs:"
+    sudo supervisorctl tail advisory-testnet | tail -10
 fi
 
+# Test mainnet service with retries
 echo ""
-echo "Testing mainnet (port 8081)..."
-if curl -s http://localhost:8081/api/quorum/health > /dev/null; then
-    print_status "Mainnet service is running successfully!"
+print_status "Testing mainnet service (port $MAINNET_PORT)..."
+MAINNET_SUCCESS=false
+for i in {1..10}; do
+    if curl -s --connect-timeout 5 http://localhost:$MAINNET_PORT/api/quorum/health >/dev/null 2>&1; then
+        print_status "✅ Mainnet service is running successfully!"
+        curl -s http://localhost:$MAINNET_PORT/api/quorum/health | head -3
+        MAINNET_SUCCESS=true
+        break
+    else
+        print_warning "Attempt $i: Mainnet not responding, waiting 5 seconds..."
+        sleep 5
+    fi
+done
+
+if [ "$MAINNET_SUCCESS" = false ]; then
+    print_error "❌ Mainnet service failed to start properly"
+    print_status "Checking mainnet logs:"
+    sudo supervisorctl tail advisory-mainnet | tail -10
+fi
+
+# Database connectivity test
+print_status "Testing database connectivity..."
+if PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$TESTNET_DB" -c "SELECT current_database(), current_user;" >/dev/null 2>&1; then
+    print_status "✅ Testnet database connection successful"
 else
-    print_warning "Mainnet service may not be ready yet. Check logs with: sudo supervisorctl tail advisory-mainnet"
+    print_error "❌ Testnet database connection failed"
+fi
+
+if PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$MAINNET_DB" -c "SELECT current_database(), current_user;" >/dev/null 2>&1; then
+    print_status "✅ Mainnet database connection successful"
+else
+    print_error "❌ Mainnet database connection failed"
 fi
 
 # Create management script
@@ -530,35 +601,81 @@ sudo systemctl enable supervisor
 print_status "✅ Auto-start on reboot configured"
 print_status "Setup completed successfully!"
 echo ""
-echo "========================================="
-echo "SETUP SUMMARY"
-echo "========================================="
-echo "✅ PostgreSQL databases created:"
-echo "   - advisory_testnet (port 8080)"
-echo "   - advisory_mainnet (port 8081)"
 echo ""
-echo "✅ Services configured with Supervisor"
-echo "✅ Firewall configured"
-if [ ! -z "$DOMAIN_NAME" ]; then
-echo "✅ Nginx reverse proxy configured"
-echo "   - http://testnet-advisory.$DOMAIN_NAME"
-echo "   - http://mainnet-advisory.$DOMAIN_NAME"
+echo "========================================="
+echo "🎉 SETUP COMPLETED SUCCESSFULLY!"
+echo "========================================="
+
+# Show final status
+SETUP_SUCCESS=true
+if [ "$TESTNET_SUCCESS" = false ] || [ "$MAINNET_SUCCESS" = false ]; then
+    SETUP_SUCCESS=false
 fi
+
+if [ "$SETUP_SUCCESS" = true ]; then
+    echo "✅ All services are running properly!"
+else
+    echo "⚠️  Some services may need attention - check logs"
+fi
+
 echo ""
-echo "🔧 Management commands:"
-echo "   $APP_DIR/manage.sh status"
-echo "   $APP_DIR/manage.sh restart"
-echo "   $APP_DIR/manage.sh logs testnet"
-echo "   $APP_DIR/manage.sh logs mainnet"
+echo "📊 Deployment Summary:"
+echo "   🗄️  Database: PostgreSQL with proper permissions"
+echo "   🌐 Testnet:  http://$(hostname -I | awk '{print $1}'):$TESTNET_PORT ($TESTNET_DB)"
+echo "   🌐 Mainnet:  http://$(hostname -I | awk '{print $1}'):$MAINNET_PORT ($MAINNET_DB)"
+echo "   👤 DB User:  $DB_USER"
+echo "   🔧 Management: $APP_DIR/manage.sh"
+
+if [ ! -z "$DOMAIN_NAME" ]; then
 echo ""
-echo "🌐 Service URLs:"
-echo "   Testnet:  http://$(hostname -I | awk '{print $1}'):8080"
-echo "   Mainnet:  http://$(hostname -I | awk '{print $1}'):8081"
+echo "🌍 Domain Access (if DNS configured):"
+echo "   🧪 Testnet: http://testnet-advisory.$DOMAIN_NAME"
+echo "   🚀 Mainnet: http://mainnet-advisory.$DOMAIN_NAME"
+fi
+
 echo ""
-echo "📋 Next steps:"
-echo "   1. Test the endpoints with curl or your browser"
-echo "   2. Configure DNS if using domain names"
-echo "   3. Set up SSL certificates for production"
-echo "   4. Configure monitoring and backups"
+echo "🔧 Management Commands:"
+echo "   $APP_DIR/manage.sh status     # Check service status"
+echo "   $APP_DIR/manage.sh restart    # Restart services"
+echo "   $APP_DIR/manage.sh logs testnet    # View testnet logs"
+echo "   $APP_DIR/manage.sh logs mainnet    # View mainnet logs"
+echo "   $APP_DIR/manage.sh update     # Update from source"
+
 echo ""
-print_status "Advisory Node Service is ready to use!"
+echo "🧪 Test Commands:"
+echo "   curl http://localhost:$TESTNET_PORT/api/quorum/health"
+echo "   curl http://localhost:$MAINNET_PORT/api/quorum/health"
+echo "   curl \"http://localhost:$TESTNET_PORT/api/quorum/available?count=5&transaction_amount=100\""
+
+echo ""
+echo "🔄 Auto-start Configuration:"
+echo "   ✅ Services auto-restart on crash (Supervisor)"
+echo "   ✅ Services auto-start on reboot (Cron job)"
+echo "   ✅ System services enabled (PostgreSQL, Supervisor)"
+
+echo ""
+echo "📂 Important Locations:"
+echo "   📁 Deployment: $APP_DIR"
+echo "   📝 Logs: $APP_DIR/logs/"
+echo "   ⚙️  Config: $APP_DIR/*.env"
+echo "   💾 Backups: $APP_DIR/backups/"
+
+echo ""
+echo "🚨 Troubleshooting (if needed):"
+echo "   📊 sudo supervisorctl status"
+echo "   📋 $APP_DIR/manage.sh status"
+echo "   🔍 sudo supervisorctl tail advisory-testnet"
+echo "   🔍 sudo supervisorctl tail advisory-mainnet"
+
+if [ "$SETUP_SUCCESS" = true ]; then
+    echo ""
+    echo "🎯 Your Advisory Node Service is ready for production!"
+    echo "🚀 Both testnet and mainnet environments are operational."
+else
+    echo ""
+    echo "⚠️  Setup completed but some services need attention."
+    echo "📋 Check the service logs and run the troubleshooting commands above."
+fi
+
+echo ""
+echo "========================================="

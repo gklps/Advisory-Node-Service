@@ -82,17 +82,22 @@ Update the balance of a specific quorum.
 #### GET /api/quorum/available
 Get available quorums with balance validation for transactions.
 
-**IMPORTANT:** This endpoint now requires `transaction_amount` parameter for balance validation.
+**IMPORTANT:** This endpoint **requires** `transaction_amount` parameter for balance validation in production (main_db.go).
 
 **Query Parameters:**
 - `count` (optional): Number of quorums needed (default: 7)
-- `transaction_amount` (required): Transaction amount in RBT for balance validation
+- `transaction_amount` (**required**): Transaction amount in RBT for balance validation - must be greater than 0
+- `ft_name` (optional): Token type for filtering (e.g., "TRI", "RBT") - see TOKEN_FILTERING_GUIDE.md
 - `last_char_tid` (optional): For type-1 quorum filtering
 - `type` (optional): Quorum type (default: 2)
 
 **Example Request:**
 ```bash
-curl "https://advisory-node-service.onrender.com/api/quorum/available?count=5&transaction_amount=100"
+# Local testing
+curl "http://localhost:8082/api/quorum/available?count=5&transaction_amount=100"
+
+# Production
+curl "https://mainnet-pool.universe.rubix.net/api/quorum/available?count=5&transaction_amount=100"
 ```
 
 **Response (Success):**
@@ -190,6 +195,33 @@ The Advisory Node implements a **balance validation system** to ensure quorums h
 - **Protects Network**: Maintains network integrity and reliability
 - **Fair Distribution**: Balances load based on available funds
 
+## Production vs Development Entry Points
+
+This repository contains multiple entry points for different use cases:
+
+### **main_db.go** - PRODUCTION (Recommended)
+- **Default Port**: 8082
+- **Database**: PostgreSQL (recommended) or SQLite
+- **Build**: `go build -o advisory-node main_db.go`
+- **Use For**: Production deployments, RubixGo platform integration
+- **Features**: Full database persistence, transaction history, balance audit trails
+
+### **main.go** - Development/Cloud Deployment
+- **Default Port**: 8080
+- **Database**: PostgreSQL (default) or SQLite
+- **Build**: `go build -o advisory-node main.go`
+- **Use For**: Cloud platforms (Render.com), alternative deployment
+- **Features**: Enhanced CORS handling, DATABASE_URL support
+
+### **main_memory.go** - Testing Only
+- **Default Port**: 8080
+- **Storage**: In-memory (no persistence)
+- **Build**: `go build -o advisory-node main_memory.go`
+- **Use For**: Unit testing, ephemeral environments
+- **Features**: Lightweight, no database required
+
+**For RubixGo integration, use `main_db.go` on port 8082.**
+
 ## Installation
 
 1. Clone the repository:
@@ -203,9 +235,9 @@ cd advisory-node
 go mod download
 ```
 
-3. Build the application:
+3. Build the production version:
 ```bash
-go build -o advisory-node
+go build -o advisory-node main_db.go
 ```
 
 ## Running the Service
@@ -243,18 +275,21 @@ CORS_ORIGIN=*
 
 ### Basic Usage
 ```bash
-# Default SQLite setup
+# Production: Run with default settings (port 8082, SQLite)
 ./advisory-node
 
-# With custom port and debug mode
-./advisory-node -port=8080 -mode=debug
+# Production: PostgreSQL setup
+./advisory-node -db-type=postgres -db-host=localhost -db-port=5432 -db-name=advisory_node -db-user=postgres -db-password=yourpass
 
-# Production PostgreSQL setup
-./advisory-node -db-type=postgres -db-url=$DATABASE_URL -port=8080
+# Production: With custom port and debug mode
+./advisory-node -port=8082 -mode=debug
+
+# Production: PostgreSQL with DATABASE_URL
+./advisory-node -db-type=postgres -db-url=$DATABASE_URL
 ```
 
 ### Command Line Options
-- `-port`: Server port (default: 8080)
+- `-port`: Server port (default: 8082 for main_db.go, 8080 for main.go)
 - `-mode`: Server mode - debug/release (default: release)
 - `-cors`: CORS allowed origins (default: *)
 - `-db-type`: Database type - sqlite/postgres (default: sqlite)
@@ -345,26 +380,34 @@ The service includes comprehensive monitoring capabilities:
 ### Project Structure
 ```
 advisory-node/
-├── main.go                    # Application entry point (database version)
-├── main_memory.go             # Memory-only version
-├── main_db.go                 # Database version entry point
+├── main_db.go                 # PRODUCTION entry point (PostgreSQL/SQLite, port 8082)
+├── main.go                    # Cloud deployment entry (Render.com, port 8080)
+├── main_memory.go             # Testing-only version (in-memory, port 8080)
 ├── models/
 │   └── quorum.go              # Data models and API structures
 ├── storage/
-│   ├── db_store.go            # Database storage implementation
+│   ├── db_store.go            # Database storage implementation (production)
 │   ├── db_models.go           # Database table models
-│   └── memory_store.go        # In-memory storage implementation
+│   └── memory_store.go        # In-memory storage (testing only)
 ├── handlers/
-│   ├── db_quorum_handler.go   # Database-backed API handlers
-│   └── quorum_handler.go      # Memory-backed API handlers
-├── examples/                  # Integration examples
+│   ├── db_quorum_handler.go   # Database-backed API handlers (production)
+│   └── quorum_handler.go      # Memory-backed API handlers (testing only)
+├── examples/                  # RubixGo integration examples
+│   ├── integration.go
+│   ├── rubixgo_integration.go
+│   └── rubixgo_balance_integration.go
+├── rubixgo_integration_patch.go  # Code to add to RubixGo platform
+├── scripts/                   # Testing and deployment scripts
 ├── docs/                      # Additional documentation
 ├── go.mod                     # Go module definition
 ├── go.sum                     # Dependency checksums
+├── Makefile                   # Build automation
 ├── Dockerfile                 # Container configuration
-├── render.yaml                # Deployment configuration
-└── README.md                  # Documentation
+├── render.yaml                # Cloud deployment configuration
+└── README.md                  # This file
 ```
+
+**Note**: For RubixGo platform integration, use `main_db.go` (production) on port 8082.
 
 ## Testing and Examples
 
@@ -372,7 +415,7 @@ advisory-node/
 
 ```bash
 # Register a quorum with balance
-curl -X POST https://advisory-node-service.onrender.com/api/quorum/register \
+curl -X POST http://localhost:8082/api/quorum/register \
   -H "Content-Type: application/json" \
   -d '{
     "did": "bafybmi123456789012345678901234567890123456789012345678901234",
@@ -382,10 +425,10 @@ curl -X POST https://advisory-node-service.onrender.com/api/quorum/register \
   }'
 
 # Get available quorums for a 100 RBT transaction
-curl "https://advisory-node-service.onrender.com/api/quorum/available?count=5&transaction_amount=100"
+curl "http://localhost:8082/api/quorum/available?count=5&transaction_amount=100"
 
 # Update quorum balance
-curl -X PUT https://advisory-node-service.onrender.com/api/quorum/balance \
+curl -X PUT http://localhost:8082/api/quorum/balance \
   -H "Content-Type: application/json" \
   -d '{
     "did": "bafybmi123456789012345678901234567890123456789012345678901234",
@@ -393,20 +436,20 @@ curl -X PUT https://advisory-node-service.onrender.com/api/quorum/balance \
   }'
 
 # Get transaction history
-curl "https://advisory-node-service.onrender.com/api/quorum/transactions?limit=50"
+curl "http://localhost:8082/api/quorum/transactions?limit=50"
 
 # Check health
-curl https://advisory-node-service.onrender.com/api/quorum/health
+curl http://localhost:8082/api/quorum/health
 
 # Unregister a quorum
-curl -X DELETE "https://advisory-node-service.onrender.com/api/quorum/unregister/bafybmi123456789012345678901234567890123456789012345678901234"
+curl -X DELETE "http://localhost:8082/api/quorum/unregister/bafybmi123456789012345678901234567890123456789012345678901234"
 ```
 
 ### Production Deployment
 
-The service is currently deployed at: `https://advisory-node-service.onrender.com`
+**Production URL**: `https://mainnet-pool.universe.rubix.net` (Port 8082)
 
-For local testing, replace the URL with `http://localhost:8080`
+For local testing with RubixGo integration, use: `http://localhost:8082`
 
 ## Troubleshooting
 
@@ -427,10 +470,10 @@ For local testing, replace the URL with `http://localhost:8080`
 **Example**:
 ```bash
 # Check what balance quorums currently have
-curl "https://advisory-node-service.onrender.com/api/quorum/info/bafybmi..."
+curl "http://localhost:8082/api/quorum/info/bafybmi..."
 
 # Update balance if needed
-curl -X PUT https://advisory-node-service.onrender.com/api/quorum/balance \
+curl -X PUT http://localhost:8082/api/quorum/balance \
   -H "Content-Type: application/json" \
   -d '{"did": "bafybmi...", "balance": 50.0}'
 ```

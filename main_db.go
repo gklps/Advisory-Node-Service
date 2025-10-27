@@ -153,6 +153,7 @@ func setupRoutes(router *gin.Engine, handler *handlers.DBQuorumHandler) {
 
 			// Query endpoints (GET /available now requires transaction_amount parameter)
 			quorum.GET("/available", handler.GetAvailableQuorums)
+			quorum.GET("/list", handler.GetAllQuorums)
 			quorum.GET("/info/:did", handler.GetQuorumInfo)
 			quorum.GET("/health", handler.GetHealth)
 			quorum.GET("/transactions", handler.GetTransactionHistory)

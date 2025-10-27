@@ -3,9 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gklps/advisory-node/models"
@@ -318,6 +316,24 @@ func (h *DBQuorumHandler) GetQuorumInfo(c *gin.Context) {
 	})
 }
 
+// GetAllQuorums handles GET /api/quorum/list
+func (h *DBQuorumHandler) GetAllQuorums(c *gin.Context) {
+	quorums, err := h.store.GetAllQuorums()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  false,
+			"message": "Failed to fetch quorums: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"quorums": quorums,
+		"count":   len(quorums),
+	})
+}
+
 // GetTransactionHistory handles GET /api/quorum/transactions
 func (h *DBQuorumHandler) GetTransactionHistory(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "100")
@@ -338,14 +354,3 @@ func (h *DBQuorumHandler) GetTransactionHistory(c *gin.Context) {
 	})
 }
 
-// isValidDID validates DID format (matching RubixGo validation)
-func isValidDID(did string) bool {
-	// Check if DID starts with "bafybmi" and has exactly 59 characters
-	if !strings.HasPrefix(did, "bafybmi") || len(did) != 59 {
-		return false
-	}
-
-	// Check if DID is alphanumeric
-	isAlphanumeric := regexp.MustCompile(`^[a-zA-Z0-9]*$`).MatchString(did)
-	return isAlphanumeric
-}

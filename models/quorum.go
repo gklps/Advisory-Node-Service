@@ -14,10 +14,11 @@ const (
 
 // QuorumRegistrationRequest represents the request to register a quorum
 type QuorumRegistrationRequest struct {
-	DID     string  `json:"did" binding:"required"`
-	PeerID  string  `json:"peer_id" binding:"required"`
-	Balance float64 `json:"balance"`
-	DIDType int     `json:"did_type" binding:"required"`
+	DID             string   `json:"did" binding:"required"`
+	PeerID          string   `json:"peer_id" binding:"required"`
+	Balance         float64  `json:"balance"`
+	DIDType         int      `json:"did_type" binding:"required"`
+	SupportedTokens []string `json:"supported_tokens"` // List of supported token types (e.g., ["RBT", "TRI"])
 }
 
 // QuorumInfo represents a registered quorum with additional metadata
@@ -31,6 +32,7 @@ type QuorumInfo struct {
 	AssignmentCount  int       `json:"assignment_count"`
 	LastAssignment   time.Time `json:"last_assignment"`
 	RegistrationTime time.Time `json:"registration_time"`
+	SupportedTokens  []string  `json:"supported_tokens"` // List of supported token types
 }
 
 // QuorumListRequest represents a request to get available quorums
@@ -39,12 +41,13 @@ type QuorumListRequest struct {
 	LastCharTID       string  `json:"last_char_tid"`      // Optional: for type-1 quorum selection
 	Type              int     `json:"type"`               // Quorum type (1 or 2)
 	TransactionAmount float64 `json:"transaction_amount"` // Transaction amount for balance validation
+	FTName            string  `json:"ft_name"`            // Token type for filtering (e.g., "TRI", "RBT")
 }
 
 // QuorumListResponse represents the response with available quorums
 type QuorumListResponse struct {
-	Status  bool       `json:"status"`
-	Message string     `json:"message"`
+	Status  bool         `json:"status"`
+	Message string       `json:"message"`
 	Quorums []QuorumData `json:"quorums"`
 }
 

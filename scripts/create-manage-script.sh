@@ -117,3 +117,5 @@ echo "✅ Created/updated manage.sh script at $DEPLOY_DIR/manage.sh"
 echo ""
 echo "Test the script with:"
 echo "  $DEPLOY_DIR/manage.sh status"
+
+

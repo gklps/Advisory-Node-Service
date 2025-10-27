@@ -3,8 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"regexp"
-	"strings"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gklps/advisory-node/models"
@@ -26,7 +25,7 @@ func NewQuorumHandler(store *storage.MemoryStore) *QuorumHandler {
 // RegisterQuorum handles POST /api/quorum/register
 func (h *QuorumHandler) RegisterQuorum(c *gin.Context) {
 	var req models.QuorumRegistrationRequest
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.BasicResponse{
 			Status:  false,
@@ -71,7 +70,7 @@ func (h *QuorumHandler) RegisterQuorum(c *gin.Context) {
 // ConfirmAvailability handles POST /api/quorum/confirm-availability
 func (h *QuorumHandler) ConfirmAvailability(c *gin.Context) {
 	var req models.ConfirmAvailabilityRequest
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.BasicResponse{
 			Status:  false,
@@ -107,7 +106,7 @@ func (h *QuorumHandler) ConfirmAvailability(c *gin.Context) {
 // GetAvailableQuorums handles GET /api/quorum/available
 func (h *QuorumHandler) GetAvailableQuorums(c *gin.Context) {
 	var req models.QuorumListRequest
-	
+
 	// Parse query parameters
 	if countStr := c.Query("count"); countStr != "" {
 		var count int
@@ -115,13 +114,26 @@ func (h *QuorumHandler) GetAvailableQuorums(c *gin.Context) {
 			req.Count = count
 		}
 	}
-	
+
 	if req.Count <= 0 {
 		req.Count = 7 // Default to 7 quorums
 	}
-	
+
+	// Parse transaction amount
+	if amountStr := c.Query("transaction_amount"); amountStr != "" {
+		if amount, err := strconv.ParseFloat(amountStr, 64); err == nil {
+			req.TransactionAmount = amount
+		}
+	}
+
+	// Default transaction amount if not provided
+	if req.TransactionAmount <= 0 {
+		req.TransactionAmount = float64(req.Count) // Default: 1 RBT per quorum
+	}
+
 	req.LastCharTID = c.Query("last_char_tid")
-	
+	req.FTName = c.Query("ft_name") // Get token type parameter
+
 	// Parse type parameter
 	if typeStr := c.Query("type"); typeStr != "" {
 		var qtype int
@@ -129,13 +141,13 @@ func (h *QuorumHandler) GetAvailableQuorums(c *gin.Context) {
 			req.Type = qtype
 		}
 	}
-	
+
 	if req.Type == 0 {
 		req.Type = 2 // Default to type 2 (private subnet)
 	}
 
-	// Get available quorums with load balancing
-	quorums, err := h.store.GetAvailableQuorums(req.Count, req.LastCharTID)
+	// Get available quorums with load balancing and token filtering
+	quorums, err := h.store.GetAvailableQuorums(req.Count, req.LastCharTID, req.TransactionAmount, req.FTName)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, models.QuorumListResponse{
 			Status:  false,
@@ -145,9 +157,17 @@ func (h *QuorumHandler) GetAvailableQuorums(c *gin.Context) {
 		return
 	}
 
+	// Create appropriate message based on token type
+	message := fmt.Sprintf("Found %d quorums", len(quorums))
+	if req.FTName == "TRI" {
+		message = fmt.Sprintf("Found %d TRI-compatible quorums (consistent set)", len(quorums))
+	} else if req.FTName != "" {
+		message = fmt.Sprintf("Found %d quorums supporting %s token", len(quorums), req.FTName)
+	}
+
 	c.JSON(http.StatusOK, models.QuorumListResponse{
 		Status:  true,
-		Message: "Quorums retrieved successfully",
+		Message: message,
 		Quorums: quorums,
 	})
 }
@@ -155,7 +175,7 @@ func (h *QuorumHandler) GetAvailableQuorums(c *gin.Context) {
 // UnregisterQuorum handles DELETE /api/quorum/unregister/:did
 func (h *QuorumHandler) UnregisterQuorum(c *gin.Context) {
 	did := c.Param("did")
-	
+
 	if !isValidDID(did) {
 		c.JSON(http.StatusBadRequest, models.BasicResponse{
 			Status:  false,
@@ -189,7 +209,7 @@ func (h *QuorumHandler) Heartbeat(c *gin.Context) {
 	var req struct {
 		DID string `json:"did" binding:"required"`
 	}
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.BasicResponse{
 			Status:  false,
@@ -223,7 +243,7 @@ func (h *QuorumHandler) Heartbeat(c *gin.Context) {
 // GetQuorumInfo handles GET /api/quorum/info/:did
 func (h *QuorumHandler) GetQuorumInfo(c *gin.Context) {
 	did := c.Param("did")
-	
+
 	if !isValidDID(did) {
 		c.JSON(http.StatusBadRequest, models.BasicResponse{
 			Status:  false,
@@ -247,14 +267,3 @@ func (h *QuorumHandler) GetQuorumInfo(c *gin.Context) {
 	})
 }
 
-// isValidDID validates DID format (matching RubixGo validation)
-func isValidDID(did string) bool {
-	// Check if DID starts with "bafybmi" and has exactly 59 characters
-	if !strings.HasPrefix(did, "bafybmi") || len(did) != 59 {
-		return false
-	}
-	
-	// Check if DID is alphanumeric
-	isAlphanumeric := regexp.MustCompile(`^[a-zA-Z0-9]*$`).MatchString(did)
-	return isAlphanumeric
-}

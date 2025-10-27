@@ -202,3 +202,5 @@ print_status "Management commands:"
 echo "  ~/advisory-node-deploy/manage.sh status"
 echo "  ~/advisory-node-deploy/manage.sh logs testnet"
 echo "  ~/advisory-node-deploy/manage.sh logs mainnet"
+
+

@@ -16,25 +16,26 @@ type QuorumDB struct {
 	AssignmentCount  int64     `gorm:"column:assignment_count;default:0"`
 	LastAssignment   time.Time `gorm:"column:last_assignment"`
 	RegistrationTime time.Time `gorm:"column:registration_time"`
+	SupportedTokens  string    `gorm:"column:supported_tokens;type:text"` // JSON array of supported token types
 	CreatedAt        time.Time `gorm:"column:created_at"`
 	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
 // TransactionHistory tracks quorum assignments for transactions
 type TransactionHistory struct {
-	ID              uint      `gorm:"primaryKey"`
-	TransactionID   string    `gorm:"index;not null"`
-	TransactionAmount float64  `gorm:"not null"`
-	QuorumDIDs      string    `gorm:"type:text"` // JSON array of assigned quorum DIDs
-	RequiredBalance float64   // 1/5th of transaction amount
-	Timestamp       time.Time
-	CreatedAt       time.Time
+	ID                uint    `gorm:"primaryKey"`
+	TransactionID     string  `gorm:"index;not null"`
+	TransactionAmount float64 `gorm:"not null"`
+	QuorumDIDs        string  `gorm:"type:text"` // JSON array of assigned quorum DIDs
+	RequiredBalance   float64 // 1/5th of transaction amount
+	Timestamp         time.Time
+	CreatedAt         time.Time
 }
 
 // QuorumStats for analytics and monitoring
 type QuorumStats struct {
-	ID                uint      `gorm:"primaryKey"`
-	QuorumDID         string    `gorm:"index;not null"`
+	ID                uint   `gorm:"primaryKey"`
+	QuorumDID         string `gorm:"index;not null"`
 	TotalTransactions int64
 	TotalAmount       float64
 	LastActive        time.Time
@@ -44,13 +45,13 @@ type QuorumStats struct {
 
 // BalanceHistory tracks balance changes
 type BalanceHistory struct {
-	ID            uint      `gorm:"primaryKey"`
-	QuorumDID     string    `gorm:"index;not null"`
-	OldBalance    float64
-	NewBalance    float64
-	ChangeReason  string
-	Timestamp     time.Time
-	CreatedAt     time.Time
+	ID           uint   `gorm:"primaryKey"`
+	QuorumDID    string `gorm:"index;not null"`
+	OldBalance   float64
+	NewBalance   float64
+	ChangeReason string
+	Timestamp    time.Time
+	CreatedAt    time.Time
 }
 
 // TableName specifies the table name for QuorumDB

@@ -1,0 +1,34 @@
+{
+  "name": "advisory-node-dashboard",
+  "version": "1.0.0",
+  "description": "Glassmorphism dashboard for Advisory Node Service",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3082",
+    "build": "next build",
+    "start": "next start -p 3082",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.15",
+    "@tanstack/react-query": "^5.90.5",
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "autoprefixer": "^10.4.21",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.546.0",
+    "next": "^16.0.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.3.0",
+    "tailwind-merge": "^3.3.1",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "playwright": "^1.56.1"
+  }
+}

@@ -236,3 +236,5 @@ echo ""
 print_status "Test commands:"
 echo "  curl http://localhost:8080/api/quorum/health"
 echo "  curl http://localhost:8081/api/quorum/health"
+
+

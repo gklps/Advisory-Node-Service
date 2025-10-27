@@ -148,7 +148,7 @@ export default function AnalyticsPage() {
                         x={entry.x}
                         y={entry.y}
                         fill="#ffffff"
-                        textAnchor={entry.x > entry.cx ? 'start' : 'end'}
+                        textAnchor={Number(entry.x) > Number(entry.cx) ? 'start' : 'end'}
                         dominantBaseline="central"
                         fontSize="14"
                         fontWeight="600"
@@ -203,7 +203,7 @@ export default function AnalyticsPage() {
                         x={entry.x}
                         y={entry.y}
                         fill="#ffffff"
-                        textAnchor={entry.x > entry.cx ? 'start' : 'end'}
+                        textAnchor={Number(entry.x) > Number(entry.cx) ? 'start' : 'end'}
                         dominantBaseline="central"
                         fontSize="14"
                         fontWeight="600"
